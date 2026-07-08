@@ -27,7 +27,7 @@ and does not provide a means to directly extract a single entry.
 """
 
 import array as _array
-import collections.abc as _collections_abc
+import collections.abc as _c
 import io as _io
 import mmap as _mmap
 import pathlib as _pathlib
@@ -35,7 +35,7 @@ import re as _re
 import sys as _sys
 import tarfile as _tarfile
 import threading as _threading
-import typing as _typing
+import typing as _t
 from struct import unpack_from as _unpack_from
 from tarfile import nti as _tarfile_nti  # type: ignore
 from tarfile import nts as _tarfile_nts  # type: ignore
@@ -64,7 +64,7 @@ _PAX_OVERRIDE_FIELDS = frozenset((
     'gid',
 ))
 
-_TypingBytesLike = _typing.Union[
+_TypingBytesLike = _t.Union[
     bytes,
     bytearray,
     memoryview,
@@ -78,11 +78,11 @@ class TarEntry:
     """
     def __init__(
         self,
-        fp: _typing.BinaryIO,
+        fp: _t.BinaryIO,
         header: bytes,
         lock: _threading.Lock,
-        pax_headers: _typing.Optional[dict[str, str]] = None,
-        gnu_long: _typing.Optional[dict[str, str]] = None,
+        pax_headers: _t.Optional[dict[str, str]] = None,
+        gnu_long: _t.Optional[dict[str, str]] = None,
     ):
 
         self._fp = fp
@@ -91,7 +91,7 @@ class TarEntry:
         self.pax_headers: dict[str, str] = pax_headers or {}
         self._gnu_long: dict[str, str] = gnu_long or {}
 
-        self._name: _typing.Optional[str] = None
+        self._name: _t.Optional[str] = None
         self.mode: int = _tarfile_nti(header[100:108])
         self.uid: int = _tarfile_nti(header[108:116])
         self.gid: int = _tarfile_nti(header[116:124])
@@ -112,7 +112,7 @@ class TarEntry:
     def __getattribute__(
         self,
         name: str,
-    ) -> _typing.Union[str, int, float]:
+    ) -> _t.Union[str, int, float]:
 
         if name not in _PAX_OVERRIDE_FIELDS:
             # Not overridden by PaxHeader
@@ -131,10 +131,36 @@ class TarEntry:
         except KeyError:
             return value
 
+    def as_tarinfo(self) -> _tarfile.TarInfo:
+        """Convert this ``TarEntry`` to a ``tarfile.TarInfo`` object
+        """
+        tarinfo = _tarfile.TarInfo()
+
+        tarinfo.name = str(self.name)
+        tarinfo.mode = self.mode
+        tarinfo.uid = self.uid
+        tarinfo.gid = self.gid
+        tarinfo.size = self.size
+        tarinfo.mtime = self.mtime
+        tarinfo.chksum = self.checksum
+        tarinfo.type = self.type
+        tarinfo.uname = self.uname
+        tarinfo.gname = self.gname
+        tarinfo.devmajor = self.devmajor
+        tarinfo.devminor = self.devminor
+
+        if self.linkname:
+            tarinfo.linkname = str(self.linkname)
+
+        if self.pax_headers:
+            tarinfo.pax_headers = self.pax_headers.copy()
+
+        return tarinfo
+
     def gnu_sparse(
             self,
             name: str,
-    ) -> _typing.Optional[str]:
+    ) -> _t.Optional[str]:
         """Helper method for fetching ``GNU.sparse.*`` PAX headers
         """
         return self.pax_headers.get(f'GNU.sparse.{name}')
@@ -150,7 +176,7 @@ class TarEntry:
         long_name = self._gnu_long.get('name')
         pax_name = self.pax_headers.get('path')
 
-        prefix: _typing.Optional[str]
+        prefix: _t.Optional[str]
         name: str
 
         if sparse_name:
@@ -171,15 +197,16 @@ class TarEntry:
         else:
             self._name = name
 
+        assert self._name
         return _pathlib.Path(self._name)
 
     @property
-    def linkname(self) -> _typing.Optional[_pathlib.Path]:
+    def linkname(self) -> _t.Optional[_pathlib.Path]:
         """Link name of the entry in the tarfile
         """
-        longlink: _typing.Optional[str] = self._gnu_long.get('linkname')
-        linkpath: _typing.Optional[str] = self.pax_headers.get('linkpath')
-        linkname: _typing.Optional[str] = (
+        longlink: _t.Optional[str] = self._gnu_long.get('linkname')
+        linkpath: _t.Optional[str] = self.pax_headers.get('linkpath')
+        linkname: _t.Optional[str] = (
             longlink or linkpath or self._linkname
         )
         if linkname:
@@ -191,8 +218,8 @@ class TarEntry:
         """Size of the entry in the tarfile
         """
         size = self._size
-        pax_size: _typing.Optional[str] = self.pax_headers.get('size')
-        sparse_size: _typing.Optional[str] = (
+        pax_size: _t.Optional[str] = self.pax_headers.get('size')
+        sparse_size: _t.Optional[str] = (
             self.gnu_sparse('size') or self.gnu_sparse('realsize')
         )
         return int(sparse_size or pax_size or size)
@@ -309,7 +336,7 @@ class TarEntry:
 
     def read(
         self,
-        size: _typing.Optional[int] = -1,
+        size: _t.Optional[int] = -1,
     ) -> bytes:
         """Read up to size bytes of the tar entry as specified by the entry
         header and return them. As a convenience, if size is unspecified
@@ -327,7 +354,7 @@ class TarEntry:
 
     def _read(
         self,
-        size: _typing.Optional[int] = -1,
+        size: _t.Optional[int] = -1,
     ) -> bytes:
 
         end = self._position + self._size
@@ -371,8 +398,8 @@ class TarEntry:
 
 def _parse_pax_headers(
     entry: TarEntry,
-    headers: _typing.Optional[dict[str, str]] = None,
-) -> _typing.Optional[dict[str, str]]:
+    headers: _t.Optional[dict[str, str]] = None,
+) -> _t.Optional[dict[str, str]]:
 
     if not entry.is_checksum_valid():
         return headers
@@ -403,8 +430,8 @@ def _parse_pax_headers(
 
 def _parse_gnu_headers(
     entry: TarEntry,
-    headers: _typing.Optional[dict[str, str]] = None,
-) -> _typing.Optional[dict[str, str]]:
+    headers: _t.Optional[dict[str, str]] = None,
+) -> _t.Optional[dict[str, str]]:
 
     if not entry.is_checksum_valid():
         return headers
@@ -415,24 +442,23 @@ def _parse_gnu_headers(
         headers = headers.copy()
 
     if entry.type == _tarfile.GNUTYPE_LONGNAME:
-        key = 'name'
+        headers['name'] = _tarfile_nts(entry.read(), _ENCODING, _ERRORS)
     elif entry.type == _tarfile.GNUTYPE_LONGLINK:
-        key = 'linkname'
-    headers[key] = _tarfile_nts(entry.read(), _ENCODING, _ERRORS)
+        headers['linkname'] = _tarfile_nts(entry.read(), _ENCODING, _ERRORS)
 
     return headers
 
 
 def _is_binary_fileobj(
-    obj: _typing.IO,
+    obj: _t.IO,
 ) -> bool:
 
     return isinstance(obj, (_io.RawIOBase, _io.BufferedIOBase))
 
 
 def iter_tar(
-    f: _typing.BinaryIO,
-) -> _collections_abc.Generator[TarEntry, None, None]:
+    f: _t.BinaryIO,
+) -> _c.Generator[TarEntry, None, None]:
     """Iterate over a file handle for a tar archive, and yield ``TarEntry``
     objects representing individual entries.
 
@@ -443,9 +469,9 @@ def iter_tar(
         raise TypeError('binary file object required')
 
     lock = _threading.Lock()
-    global_headers: _typing.Optional[dict[str, str]] = None
-    pax_headers: _typing.Optional[dict[str, str]] = None
-    gnu_long: _typing.Optional[dict[str, str]] = None
+    global_headers: _t.Optional[dict[str, str]] = None
+    pax_headers: _t.Optional[dict[str, str]] = None
+    gnu_long: _t.Optional[dict[str, str]] = None
     while True:
         with lock:
             header = f.read(512)
