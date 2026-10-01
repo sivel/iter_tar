@@ -63,6 +63,10 @@ _PAX_OVERRIDE_FIELDS = frozenset((
     'uid',
     'gid',
 ))
+_RESOLVED_PAX_FIELDS = _PAX_OVERRIDE_FIELDS | frozenset((
+    'path',
+    'linkpath',
+))
 
 _TypingBytesLike = _t.Union[
     bytes,
@@ -153,7 +157,10 @@ class TarEntry:
             tarinfo.linkname = str(self.linkname)
 
         if self.pax_headers:
-            tarinfo.pax_headers = self.pax_headers.copy()
+            tarinfo.pax_headers = {
+                key: value for key, value in self.pax_headers.items()
+                if key not in _RESOLVED_PAX_FIELDS
+            }
 
         return tarinfo
 
